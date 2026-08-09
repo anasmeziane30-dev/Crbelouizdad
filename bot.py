@@ -2,18 +2,13 @@ import os
 import discord
 from discord.ext import commands
 from discord import app_commands
-from dotenv import load_dotenv
 import datetime
 
-# تحميل المتغيرات من ملف .env (للتشغيل المحلي)
-load_dotenv()
-TOKEN = os.getenv('DISCORD_TOKEN')
-
-# التأكد من وجود التوكن
+# قراءة التوكن من متغيرات البيئة مباشرة
+TOKEN = os.environ.get('DISCORD_TOKEN')
 if not TOKEN:
     raise ValueError("يجب وضع التوكن في متغير DISCORD_TOKEN")
 
-# إعداد الصلاحيات (Intents)
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -41,28 +36,24 @@ class TicketView(discord.ui.View):
 
     @discord.ui.button(label="🎫 فتح تذكرة جديدة", style=discord.ButtonStyle.primary, custom_id="open_ticket")
     async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # البحث عن فئة التذاكر (سنأخذها من متغيرات البيئة)
-        category_id = int(os.getenv('TICKET_CATEGORY_ID', 0))
-        support_role_id = int(os.getenv('SUPPORT_ROLE_ID', 0))
+        category_id = int(os.environ.get('TICKET_CATEGORY_ID', 0))
+        support_role_id = int(os.environ.get('SUPPORT_ROLE_ID', 0))
         
         category = discord.utils.get(interaction.guild.categories, id=category_id)
         if not category:
             await interaction.response.send_message("❌ لم يتم إعداد فئة التذاكر بشكل صحيح.", ephemeral=True)
             return
 
-        # صلاحيات القناة
         overwrites = {
             interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
             interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True, attach_files=True),
             interaction.guild.get_role(support_role_id): discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
 
-        # إنشاء القناة
         ticket_number = len([ch for ch in category.channels]) + 1
         channel_name = f"تذكرة-{interaction.user.name}-{ticket_number}"
         channel = await interaction.guild.create_text_channel(channel_name, category=category, overwrites=overwrites)
 
-        # إرسال رسالة الترحيب في التذكرة مع أزرار التحكم
         embed = discord.Embed(
             title="🎟️ تذكرتك قد فُتحت",
             description=f"مرحباً {interaction.user.mention}!\nفريق الدعم سيتواصل معك قريباً.",
@@ -73,12 +64,11 @@ class TicketView(discord.ui.View):
         control_view = TicketControlView(channel_id=channel.id)
         await channel.send(embed=embed, view=control_view)
         
-        # رد للمستخدم
         await interaction.response.send_message(f"✅ تم فتح تذكرتك: {channel.mention}", ephemeral=True)
 
 
 # ----------------------------------------
-# 3. أزرار التحكم داخل التذكرة (إغلاق - حذف - نسخ)
+# 3. أزرار التحكم داخل التذكرة
 # ----------------------------------------
 class TicketControlView(discord.ui.View):
     def __init__(self, channel_id):
@@ -92,26 +82,18 @@ class TicketControlView(discord.ui.View):
             await interaction.response.send_message("⚠️ القناة غير موجودة.", ephemeral=True)
             return
 
-        # جمع المحادثة (Transcript) وإرسالها
         messages = []
         async for msg in channel.history(limit=200, oldest_first=True):
             messages.append(f"{msg.author.name} | {msg.created_at.strftime('%H:%M')}: {msg.content}")
         
         transcript = "\n".join(messages) if messages else "لا توجد رسائل."
-        
-        # إنشاء ملف نصي
-        file = discord.File(
-            fp=bytes(transcript, 'utf-8'),
-            filename=f"transcript-{channel.name}.txt"
-        )
+        file = discord.File(fp=bytes(transcript, 'utf-8'), filename=f"transcript-{channel.name}.txt")
 
-        # إرسال الملف لقناة الـ Logs (إذا وجدت)
-        log_channel_id = int(os.getenv('LOG_CHANNEL_ID', 0))
+        log_channel_id = int(os.environ.get('LOG_CHANNEL_ID', 0))
         log_channel = interaction.guild.get_channel(log_channel_id)
         if log_channel:
             await log_channel.send(f"📄 نسخة محادثة تذكرة {channel.name}", file=file)
 
-        # تغيير الصلاحيات بحيث لا يرى الأعضاء القناة (إغلاق)
         await channel.set_permissions(interaction.guild.default_role, read_messages=False)
         await channel.send("🔒 تم إغلاق هذه التذكرة بواسطة فريق الدعم.")
         await interaction.response.send_message("✅ تم إغلاق التذكرة.", ephemeral=True)
@@ -135,10 +117,7 @@ class TicketControlView(discord.ui.View):
             messages.append(f"{msg.author.name} | {msg.created_at.strftime('%H:%M')}: {msg.content}")
         
         transcript = "\n".join(messages) if messages else "لا توجد رسائل."
-        file = discord.File(
-            fp=bytes(transcript, 'utf-8'),
-            filename=f"transcript-{channel.name}.txt"
-        )
+        file = discord.File(fp=bytes(transcript, 'utf-8'), filename=f"transcript-{channel.name}.txt")
         await interaction.response.send_message("📋 ها هي نسخة المحادثة:", file=file, ephemeral=True)
 
 
